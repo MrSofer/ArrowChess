@@ -1,0 +1,38 @@
+html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background-color: #262421; /* Professional dark theme */
+}
+
+
+.parent-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+}
+
+.chess-board {
+    display: grid;
+    grid-template-columns: repeat(8, 90px);
+    grid-template-rows: repeat(8, 90px);
+    border: 5px solid #3d3a36;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+}
+
+.boardRow {
+    display: flex;
+}
+
+.square-not-chosen {
+    border: 0;
+}
+
+.square-chosen {
+    outline: 10px solid #FFF078;
+    outline-offset: -5px;      /* Pulls the outline inside the square */
+    z-index: 10;
+}
