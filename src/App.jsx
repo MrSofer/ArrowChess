@@ -1,17 +1,19 @@
-import React, {useState} from "react";
+import React, {useEffect, useState} from "react";
 //import {useWindowDimensions} from "react-native";
 import "./styles.css";
 
 const initialBoard = [
-    "r", "n", "b", "q", "k", "b", "n", "r",
-    "p", "p", "p", "p", "p", "p", "p", "p",
-    "",  "",  "",  "",  "",  "",  "",  "",
-    "",  "",  "",  "",  "",  "",  "",  "",
-    "",  "",  "",  "",  "",  "",  "",  "",
-    "",  "",  "",  "",  "",  "",  "",  "",
+    "R", "N", "B", "Q", "K", "B", "N", "R",
     "P", "P", "P", "P", "P", "P", "P", "P",
-    "R", "N", "B", "Q", "K", "B", "N", "R"
+    "",  "",  "",  "",  "",  "",  "",  "",
+    "",  "",  "",  "",  "",  "",  "",  "",
+    "",  "",  "",  "",  "",  "",  "",  "",
+    "",  "",  "",  "",  "",  "",  "",  "",
+    "p", "p", "p", "p", "p", "p", "p", "p",
+    "r", "n", "b", "q", "k", "b", "n", "r"
 ];
+
+const BOARD_LENGTH = 64
 
 function Square({color,value,isChosen , isLegalMove ,onSquareClick}){
 
@@ -21,18 +23,18 @@ function Square({color,value,isChosen , isLegalMove ,onSquareClick}){
     };
 
     const PIECES = {
-        "p": "../images/white pawn.svg",
-        "P": "../images/black pawn.svg",
-        "n": "../images/white knight.svg",
-        "N": "../images/black knight.svg",
-        "b": "../images/white bishop.svg",
-        "B": "../images/black bishop.svg",
-        "r": "../images/white rook.svg",
-        "R": "../images/black rook.svg",
-        "q": "../images/white queen.svg",
-        "Q": "../images/black queen.svg",
-        "k": "../images/white king.svg",
-        "K": "../images/black king.svg",
+        "P": "../images/white pawn.svg",
+        "p": "../images/black pawn.svg",
+        "N": "../images/white knight.svg",
+        "n": "../images/black knight.svg",
+        "B": "../images/white bishop.svg",
+        "b": "../images/black bishop.svg",
+        "R": "../images/white rook.svg",
+        "r": "../images/black rook.svg",
+        "Q": "../images/white queen.svg",
+        "q": "../images/black queen.svg",
+        "K": "../images/white king.svg",
+        "k": "../images/black king.svg",
     };
     const isEmpty = value === "";
 
@@ -121,9 +123,24 @@ export default function App() {
     const [selectedSquare, setSelectedSquare] = useState(null);
     const [legalMoves, setLegalMoves] = useState([]);
 
+    const requestOptions = {
+        method:"POST",
+        headers:{"Content-Type": "application/json"}
+    }
+
+    useEffect(()=>{
+        try{
+            fetch("http://localhost:8000/reset");
+        }
+        catch{
+            console.log("error - board reset");
+        }
+
+    },[])
     async function handleBoardClick(i){
-        let requestBody, requestOptions, response, json;
+        let requestBody, response, json;
         if (legalMoves.includes(i)){
+
             try {
 
             requestBody = JSON.stringify({
@@ -131,11 +148,7 @@ export default function App() {
                 moving_to:i
                     });
 
-            requestOptions = {
-                    method:"POST",
-                    headers:{"Content-Type": "application/json"},
-                    body:requestBody
-                }
+            requestOptions["body"] = requestBody;
 
             response = await fetch("http://localhost:8000/move",requestOptions);
             json = await response.json();
@@ -143,10 +156,8 @@ export default function App() {
             catch {
                 return;
             }
-            const newSquares = [...squares];
-            newSquares[i] = newSquares[selectedSquare];
-            newSquares[selectedSquare] = "";
-            setSquares(newSquares);
+            const updatedBoard = json["updated_board"]
+            setSquares(updatedBoard)
             setLegalMoves([]);
             setSelectedSquare(null);
             return;
@@ -155,11 +166,7 @@ export default function App() {
         setSelectedSquare(i);
         try{
             requestBody = JSON.stringify({index:i});
-            requestOptions = {
-                method:"POST",
-                headers:{"Content-Type": "application/json"},
-                body:requestBody
-            }
+            requestOptions["body"] = requestBody
             response = await fetch("http://localhost:8000/get_moves",requestOptions);
             json = await response.json();
             setLegalMoves(json.moves);
