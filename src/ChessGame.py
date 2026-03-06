@@ -11,10 +11,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-class RequestHandler(BaseModel):
-    board : list[str]
+class SelectHandler(BaseModel):
     index : int
 
+class MoveHandler(BaseModel):
+    moving_piece : int
+    moving_to : int
 
 pieces_translation = {
 
@@ -137,39 +139,25 @@ class ChessGame:
                         ret.append(8*(i + k) + (j + l))
         return ret
 
+    def move(self,piece:int,towards:int) -> str:
+        captures = self.board[towards] != ""
+        self.board[towards] = self.board[piece]
+        self.board[piece] = 0
+        print(self.board)
+        self.turn = 1 - self.turn
+        return str.upper(numbers_translation[self.board[towards]]) + ("x" if captures else "") + chr(97 + towards // 8) + str(towards % 8)
 
-
-
-
-"""    def move(self, mov):
-        match mov[0]:
-            case "N":
-
-            case "B":
-
-            case "R":
-
-            case "Q":
-
-            case "K":
-
-            case "O":
-                if len(mov) == 3:
-                    if self.turn == "white":
-                        self.board[0][7] = 6
-                        self.board[0][6] = 4
-                        self.board[0][]
-            
-            case _:"""
 
 game = ChessGame()
 
 @app.post("/get_moves")
-async def calculate_moves(request:RequestHandler):
-    if request.index is None:
-        return {"moves":[]}
-    board = request.board
+async def calculate_moves(request:SelectHandler):
     index = request.index
-    game.board = [pieces_translation[board[i]] for i in range(len(board))]
     calculated_list = game.find_legal_moves(index)
     return {"moves":calculated_list}
+
+@app.post("/move")
+async def move(request:MoveHandler):
+    moving_piece = request.moving_piece
+    moving_to = request.moving_to
+    return {"move_name":game.move(moving_piece,moving_to)}

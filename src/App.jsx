@@ -99,7 +99,6 @@ function Board({turn,squares,onBoardClick,legalMoves,selectedSquare}){
                     const col = index % 8;
                     const isDark = (row+col) % 2 === 0;
                     const isLegal = legalMoves.includes(index);
-                    const turn = 0;
 
                     return(
                         <Square
@@ -123,17 +122,46 @@ export default function App() {
     const [legalMoves, setLegalMoves] = useState([]);
 
     async function handleBoardClick(i){
+        let requestBody, requestOptions, response, json;
+        if (legalMoves.includes(i)){
+            try {
+
+            requestBody = JSON.stringify({
+                moving_piece:selectedSquare,
+                moving_to:i
+                    });
+
+            requestOptions = {
+                    method:"POST",
+                    headers:{"Content-Type": "application/json"},
+                    body:requestBody
+                }
+
+            response = await fetch("http://localhost:8000/move",requestOptions);
+            json = await response.json();
+            }
+            catch {
+                return;
+            }
+            const newSquares = [...squares];
+            newSquares[i] = newSquares[selectedSquare];
+            newSquares[selectedSquare] = "";
+            setSquares(newSquares);
+            setLegalMoves([]);
+            setSelectedSquare(null);
+            return;
+        }
         if (i === selectedSquare) {setSelectedSquare(null); setLegalMoves([]); return;} // deselect a piece
         setSelectedSquare(i);
         try{
-            const requestBody = JSON.stringify({board:squares,index:i});
-            const requestOptions = {
+            requestBody = JSON.stringify({index:i});
+            requestOptions = {
                 method:"POST",
                 headers:{"Content-Type": "application/json"},
                 body:requestBody
             }
-            const response = await fetch("http://localhost:8000/get_moves",requestOptions);
-            const json = await response.json();
+            response = await fetch("http://localhost:8000/get_moves",requestOptions);
+            json = await response.json();
             setLegalMoves(json.moves);
         }
         catch{
@@ -147,7 +175,7 @@ export default function App() {
             squares={squares}
             selectedSquare={selectedSquare}
             legalMoves={legalMoves}
-            onBoardClick={(i) => handleBoardClick(i)}
+            onBoardClick={(index) => handleBoardClick(index)}
         />
 
     )
