@@ -1,5 +1,4 @@
 import fastapi, uvicorn
-from networkx.utils.rcm import pseudo_peripheral_node
 from pydantic import BaseModel
 from starlette.middleware.cors import CORSMiddleware
 
@@ -95,9 +94,11 @@ class ChessGame:
 
     board : list[int]
     turn : int
+    color_bit : int
     is_check : bool
     kings : list[int]
-    can_castle = list[list[bool]]
+    did_kings_move : list[bool]
+    did_rooks_move_or_got_taken : dict
 
 
     def __init__(self):
@@ -110,13 +111,30 @@ class ChessGame:
                       black_pawn,black_pawn,black_pawn,black_pawn,black_pawn,black_pawn,black_pawn,black_pawn,
                       black_rook,black_knight,black_bishop,black_queen,black_king,black_bishop,black_knight,black_rook]
         self.turn = white_turn #1 is white's turn, -1 is black's turn
+        self.color_bit = 0 #0 for white, 1 for black
         self.is_check = False
         self.kings = [-1,4,60]
-        self.can_castle = [[],[True,True],[True,True]]
+        self.did_kings_move = [False for _ in range(3)]
+        self.did_rooks_move_or_got_taken = {0:False,7:False,56:False,63:False}
         self.en_passant = None
         
-    def is_king_safe(self,king_ind) -> bool:
-        
+    def pseudo_move(self, ind:int, towards:int) -> tuple[int,bool]:
+        captured_piece = self.board[towards]
+        self.board[towards] = self.board[ind]
+        self.board[ind] = empty_square
+        is_en_passant = False
+        if  self.turn * self.board[towards] == pawn and self.en_passant == towards:
+            self.board[towards - ROWS * self.turn] = empty_square
+            captured_piece = - self.turn * pawn
+            is_en_passant = True
+
+        if self.turn * self.board[towards] == king:
+            self.kings[self.turn] = towards
+
+        return captured_piece,is_en_passant
+
+    def is_king_safe(self,king_ind:int) -> bool:
+
         king_row,king_col = ind_to_coord(king_ind)
 
         pawn_take_from_left = coord_to_ind(king_row + self.turn, king_col-1)
@@ -145,22 +163,7 @@ class ChessGame:
 
         return True
 
-    def pseudo_move(self, ind, towards) -> tuple[int,bool]:
-        captured_piece = self.board[towards]
-        self.board[towards] = self.board[ind]
-        self.board[ind] = empty_square
-        is_en_passant = False
-        if  self.turn * self.board[towards] == pawn and self.en_passant == towards:
-            self.board[towards - ROWS * self.turn] = empty_square
-            captured_piece = - self.turn * pawn
-            is_en_passant = True
-
-        if self.turn * self.board[towards] == king:
-            self.kings[self.turn] = towards
-
-        return captured_piece,is_en_passant
-
-    def unmove(self, current_ind, original_ind, piece_captured, was_en_passant):
+    def unmove(self, current_ind:int, original_ind:int, piece_captured:int, was_en_passant:bool):
         self.board[original_ind] = self.board[current_ind]
         if was_en_passant:
             self.board[current_ind] = empty_square
@@ -177,6 +180,39 @@ class ChessGame:
             legal_moves_list.append(towards)
         self.unmove(towards,ind,piece_captured,is_en_passant)
 
+    def can_castle(self, direction: int) -> bool:  # direction is 1 (kingside) or -1 (queenside)
+
+        if self.did_kings_move[self.turn]: #did the king move?
+            return False
+
+        target_rook_pos = (COLS - 1) * int(direction == 1) + COLS * (ROWS - 1) * self.color_bit
+        if self.did_rooks_move_or_got_taken[target_rook_pos]: #did the rooks move or got taken?
+            return False
+
+        curr_king_pos = self.kings[self.turn]
+
+        if self.board[curr_king_pos + direction] != empty_square or self.board[curr_king_pos + 2 * direction] != empty_square: #is the board clear for castling?
+            return False
+
+        if direction == -1 and self.board[curr_king_pos - 3] != empty_square: #extra check for b1/8 for queenside castling
+            return False
+
+        if not self.is_king_safe(curr_king_pos): #is king in check?
+            return False
+
+        self.pseudo_move(curr_king_pos, curr_king_pos + direction)
+        safe_pass = self.is_king_safe(curr_king_pos + direction)
+        self.unmove(curr_king_pos + direction, curr_king_pos, empty_square, False)
+        if not safe_pass: #is the passing square safe?
+            return False
+
+        self.pseudo_move(curr_king_pos, curr_king_pos + 2 * direction)
+        safe_land = self.is_king_safe(curr_king_pos + 2 * direction)
+        self.unmove(curr_king_pos + 2 * direction, curr_king_pos, empty_square, False)
+        if not safe_land: #is the landing square safe?
+            return False
+
+        return True #if all good
 
     def find_legal_moves(self,ind) -> list[int]: #todo: add castling, promotion
         ret = list()
@@ -190,7 +226,7 @@ class ChessGame:
                 if self.board[step_one] == empty_square:
                     self.king_safety_check(ind,step_one,ret)
                     step_two = coord_to_ind(piece_row+ 2*self.turn ,piece_col)
-                    if (piece_row == 1 + (5 * int(self.turn == black_turn))) and (self.board[step_two] == empty_square):
+                    if (piece_row == 1 + (5 * self.color_bit)) and (self.board[step_two] == empty_square):
                         self.king_safety_check(ind,step_two,ret)
                 if piece_col > 0:
                     take_left = step_one - 1
@@ -209,6 +245,9 @@ class ChessGame:
             case 5: #queen
                 legal_directions = queen_directions
             case 6: #king
+                for i in [-1,1]:
+                    if self.can_castle(i):
+                        ret.append(ind + 2*i)
                 legal_moves = king_moves
 
 
@@ -235,23 +274,46 @@ class ChessGame:
 
         return ret
 
-    def move(self,piece:int,towards:int) -> str:
-        captures = self.board[towards] != empty_square
-        self.board[towards] = self.board[piece]
-        self.board[piece] = empty_square
-        if (self.turn * self.board[towards] == pawn) and (self.en_passant == towards):
-            self.board[towards -  self.turn * ROWS] = empty_square
+    def move(self, ind_from:int, ind_towards:int) -> str:
+        castles = None
+        for ind in [ind_from,ind_towards]:
+            if ind in [0, 7, 56, 63]:
+                self.did_rooks_move_or_got_taken[ind] = True
+        captures = self.board[ind_towards] != empty_square
+        self.board[ind_towards] = self.board[ind_from]
+        self.board[ind_from] = empty_square
+        if (self.turn * self.board[ind_towards] == pawn) and (self.en_passant == ind_towards):
+            self.board[ind_towards - self.turn * ROWS] = empty_square
             captures = True
-        if self.turn * self.board[towards] == pawn and towards // ROWS == 3 + int(self.turn == black_turn):
-            self.en_passant = towards - ROWS * self.turn
+        if self.turn * self.board[ind_towards] == pawn and ind_towards // ROWS == 3 + self.color_bit:
+            self.en_passant = ind_towards - ROWS * self.turn
         else:
             self.en_passant = None
 
-        if self.turn * self.board[towards] == king:
-            self.kings[self.turn] = towards
+        if self.turn * self.board[ind_towards] == king:
+            match ind_towards - ind_from:
+                case 2:
+                    rook_from = COLS - 1 + COLS * (ROWS - 1) * self.color_bit
+                    rook_to = COLS - 3 + COLS * (ROWS - 1) * self.color_bit
+                    self.board[rook_to] = self.board[rook_from]
+                    self.board[rook_from] = empty_square
+                    castles = "O-O"
+                case -2:
+                    rook_from = COLS * (ROWS - 1) * self.color_bit
+                    rook_to = 3 + COLS * (ROWS - 1) * self.color_bit
+                    self.board[rook_to] = self.board[rook_from]
+                    self.board[rook_from] = empty_square
+                    castles = "O-O-O"
+            self.kings[self.turn] = ind_towards
+            self.did_kings_move[self.turn] = True
 
         self.turn = -1 * self.turn
-        return str.upper(numbers_translation[self.board[towards]]) + ("x" if captures else "") + chr(97 + towards % COLS) + str((towards // ROWS) + 1)
+        self.color_bit = 1 - self.color_bit
+        return str.upper(numbers_translation[self.board[ind_towards]]) + ("x" if captures else "") + chr(97 + ind_towards % COLS) + str((ind_towards // ROWS) + 1) if castles is None else castles
+
+    def castle(self,direction:int) -> str:
+        pass #todo
+
 
 
 
@@ -279,8 +341,7 @@ async def move(request:MoveHandler) -> dict:
 
 """
 todo:
-implement pins
 implement castling
-implement checks
 implement promotion
+implement checkmate
 """
